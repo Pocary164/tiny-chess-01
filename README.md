@@ -1,55 +1,49 @@
-# tiny-chess-01 — 4 KB chess engine (v2)
+# tiny-chess-01 — v6 entry
 
-An original chess engine in a single self-extracting `main.py` (4,095 bytes
-as committed; the readable engine source is lzma-compressed and
-base85-encoded inside it, a packing the rules explicitly allow). Pure Python
-3 standard library, fully deterministic: it searches a fixed number of nodes
-per move (95,000) and never consults a clock, so any game replays exactly.
+A chess engine in 4,073 bytes of Python (LZMA + base85 packed; the
+unpacked source is a single stdlib-only module). It plays through the
+environment protocol: POST /game, then POST /move with UCI moves until
+the game is done. No network, no clock — the search is budgeted by a
+fixed node count, so every move is deterministic.
 
-## How it plays
+## Design
 
-- **Board**: 0x88 mailbox with piece lists and an index array. Make pushes a
-  full state snapshot; unmake restores the slices in place, while the
-  evaluation terms, game phase, non-pawn material counts and the Zobrist
-  hash are maintained incrementally inside make, so no full rescan happens.
-- **Move generation**: complete rules — castling legality (rights, empty and
-  unattacked transit squares), en passant (including the pinned-ep case),
-  promotions, check evasion.
-- **Search**: negamax alpha-beta with iterative deepening under the fixed
-  node budget, a transposition table (depth / score / best move), null-move
-  pruning (R = 2, only with non-pawn material and not in check),
-  quiescence search over captures and promotions (all evasions when in
-  check) with delta pruning, and a one-ply extension for checking moves.
-  Ordering: TT move first, then captures by MVV-LVA plus promotion bonus.
-- **Evaluation**: tapered piece-square tables (formula-generated at
-  start-up: pawn structure by rank and file, centralisation for knights,
-  bishops and the queen, rook on the seventh rank, a sheltered-king midgame
-  table and an active-king endgame table) blended by game phase, with
-  material values P100 N320 B330 R500 Q1000 (midgame) / P110 N300 B320
-  R530 Q950 (endgame). Incremental scores are fuzz-checked against an
-  independent board scan.
-- **Protocol**: talks to the competition environment over HTTP (POST
-  /game, /move) exactly as specified, rebuilds the position from the served
-  move list each turn, and validates its move against the environment's
-  legal-move list before sending.
+- **Board**: 0x88 mailbox, signed piece codes, piece lists with an
+  index array; make/unmake by append / swap-remove (exact state and
+  hash restoration), incremental material + piece-square scores and
+  incremental Zobrist hash (splitmix-generated keys).
+- **Evaluation**: tapered MG/EG piece-square tables (own values;
+  material folded in), phase = non-pawn material. The tables are
+  left-right symmetric and stored at half width.
+- **Search**: iterative deepening over a 95,000-node budget with a
+  transposition table (depth / value / bound flag / best move),
+  negamax alpha-beta, check extensions, and **late move reductions**
+  (quiet, non-pawn, late moves reduced by 1–2 plies with a full-depth
+  re-search on fail-high).
+- **Move ordering**: TT move first, then MVV-LVA captures, then two
+  killer moves per ply, then history heuristic (d² bonus on quiet
+  cutoffs).
+- **Quiescence**: stand-pat with delta pruning (margin 280), captures
+  and promotions only, full move list when in check.
 
-## Validation
+## Tuning notes
 
-- Perft matches the canonical values on the standard suite: startpos
-  (20 / 400 / 8,902), Kiwipete (48 / 2,039 / 97,862), the CPW positions, a
-  castling position (26 / 568), an en-passant-pin position
-  (14 / 191 / 2,812 / 43,238).
-- Randomised make/unmake fuzzing: undoing restores the exact prior state
-  (board, piece lists, indices, hash, evaluation); redoing reproduces it.
-- Determinism: the same position searched twice returns the identical move
-  and node count; a full self-play game replays byte-identically in a
-  separate process.
-- Strength (this machine, kit practice openings, colours swapped): 100
-  games against the previous version of this engine (80,000 nodes) scored
-  70.5% (54W 33D 13L, +150 Elo); 100 games against the kit's house
-  baseline replica scored 72.5% (60W 25D 15L).
+Designs were screened with paired, colour-swapped fixed-node matches
+and confirmed on the practice gauntlet. Late move reductions plus
+killer/history ordering were the gains that survived screening;
+futility pruning, PVS, bishop-pair and passed-pawn terms all measured
+neutral-to-negative on this stack and were left out. Full evidence:
+kept with the campaign logs outside this repo.
 
-## Deliverables
+## Design
 
-- `main.py` — the engine (only code file; reads no other repo file).
-- `LICENSE` — MIT. This README.
+In my own summary: the whole engine ships as one self-extracting
+Python file — a compressed payload that unpacks into a sunfish-style
+board with fast make/unmake. Its search is a deterministic,
+fixed-node alpha-beta (negamax) search, so the same position always
+produces the same move and no clock is ever consulted. Two ideas do
+most of the heavy lifting at this size: late move reductions, which
+spend full depth only on the moves most likely to matter, and
+killer/history move ordering, which tries quiet moves that caused
+cutoffs before — together they let a very small search play well
+beyond what its node budget suggests.
