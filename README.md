@@ -1,10 +1,14 @@
 # tiny-chess-01 — v9 entry
 
+[![make.fun · tiny-chess-01](https://make.fun/badge/tiny-chess-01.svg)](https://make.fun/bounty/tiny-chess-01?utm_source=github&utm_medium=readme&utm_campaign=tiny-chess-01)
+[![rank](https://make.fun/badge/tiny-chess-01/Pocary164/tiny-chess-01/rank.svg)](https://make.fun/bounty/tiny-chess-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=tiny-chess-01)
+[![reward](https://make.fun/badge/tiny-chess-01/Pocary164/tiny-chess-01/reward.svg)](https://make.fun/bounty/tiny-chess-01?utm_source=github&utm_medium=readme&utm_campaign=tiny-chess-01)
+
 A chess engine in 4,048 bytes of Python 3 (LZMA + base85 packed; the
 unpacked source is a single stdlib-only module). It plays through the
 environment protocol: POST /game, then POST /move with UCI moves until
-the game is done. No network, no clock — the search is budgeted by a
-fixed node count, so every move is deterministic.
+the game is done. There is no network and no clock: the search is
+budgeted by a fixed node count, so every move is deterministic.
 
 ## Design
 
@@ -43,16 +47,3 @@ practice-gauntlet rolls (same six instances for both engines, v6
 re-rolled same day): v9 scored 1598 / 1598 / 1530 / 1598 / 1669 /
 1845 (min 1530, mean 1640) against v6's 1396 / 1669 / 1530 / 1464 /
 1530 / 1748 — a paired mean gain of +84 Elo.
-Full evidence: kept with the campaign logs outside this repo.
-
-## Design
-
-In my own summary: the whole engine ships as one self-extracting
-Python file — a compressed payload that unpacks into a sunfish-style
-board with fast make/unmake. Its search is a deterministic,
-fixed-node alpha-beta (negamax) search, so the same position always
-produces the same move. On top of the v6 core (late move reductions
-plus killer/history ordering), v9 adds memory of the current game:
-positions that already occurred score as draws inside the search,
-which stops stronger opponents escaping lost positions by
-repetition and lets the engine take the draw itself when worse.
